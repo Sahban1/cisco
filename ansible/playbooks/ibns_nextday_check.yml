@@ -1,0 +1,48 @@
+# ansible/playbooks/ibns_nextday_check.yml
+# RUN ORDER: 5 (next business morning, after users are back)
+# Read-only. Layer 3: ports that authenticated in the daytime baseline but not
+# now, plus config checks. Issues are fixed per port or with a planned rollback.
+---
+- name: Resolve targets
+  ansible.builtin.import_playbook: ibns_target.yml
+
+- name: Next-day check (read-only)
+  hosts: ibns_targets
+  gather_facts: false
+  vars:
+    ibns_run_id: "{{ hostvars['localhost']['ibns_run_id'] }}"
+    ibns_nextday_stage: "{{ ibns_completed_stage | default('golden') }}"
+  tasks:
+    - name: Collect switch state
+      ansible.builtin.include_role:
+        name: ibns_collect
+
+    - name: Load the daytime baseline
+      ansible.builtin.include_role:
+        name: ibns_snapshot
+        tasks_from: load
+      vars:
+        snapshot_name: "baseline-latest.json"
+
+    - name: Compare with the baseline
+      ansible.builtin.set_fact:
+        ibns_nextday:
+          ports: "{{ ibns_loaded.sessions | ibns_compare_baseline(ibns_state.sessions) }}"
+          config_findings: "{{ ibns_state.running | ibns_config_checks(ibns_loaded.port_classes, ibns_port_templates, ibns_nextday_stage, ibns_loaded.port_plan | default(none)) }}"
+
+    - name: Save next-day snapshot
+      ansible.builtin.include_role:
+        name: ibns_snapshot
+        tasks_from: save
+      vars:
+        snapshot_name: "nextday-{{ ibns_run_id }}.json"
+        snapshot_content: "{{ ibns_nextday | to_nice_json }}"
+
+    - name: Report
+      ansible.builtin.include_role:
+        name: ibns_report
+      vars:
+        ibns_result:
+          stage: nextday-check
+          outcome: "{{ 'clean' if (ibns_nextday.ports.passed and ibns_nextday.config_findings | length == 0) else 'ISSUES' }}"
+          detail: "missing ports: {{ ibns_nextday.ports.ports_missing }}; config: {{ ibns_nextday.config_findings }}"

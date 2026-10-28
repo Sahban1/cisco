@@ -1,0 +1,10 @@
+# requirements-ibns.txt
+# NEW. Lines to ADD to the requirements.txt copied from ud00 (keep all of ud00's
+# pinned lines; remove catalystwan only if nothing else needs it).
+# Laptop: pip install -r requirements.txt
+ansible-core==2.16.7
+ansible-lint
+catalystcentersdk
+requests
+pytest
+pyyaml

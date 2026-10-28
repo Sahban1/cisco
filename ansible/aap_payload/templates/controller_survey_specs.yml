@@ -1,0 +1,156 @@
+{{/* This file is a template for your AAP project's survey specs.
+   * REPLACES ud00's controller_survey_specs.yml.
+   * Each key must equal a job template name in controller_templates.yml.
+   * Read-only jobs ask for hostnames only; config-changing jobs also ask for
+   * the change number and dry_run (default true). */}}
+---
+app_controller_survey_specs:
+  "{{ .Values.HELIOS_APP_CODE }}_ibns_classify_{{ .Values.HELIOS_APP_NAME }}":
+    name: "IBNS classify ports"
+    description: "Read-only port classification (description + config)"
+    spec:
+      - question_name: "Device Hostnames"
+        question_description: "Enter device hostnames, comma separated (one site)"
+        required: true
+        type: "text"
+        variable: "device_hostnames"
+
+  "{{ .Values.HELIOS_APP_CODE }}_ibns_baseline_{{ .Values.HELIOS_APP_NAME }}":
+    name: "IBNS baseline"
+    description: "Read-only daytime session baseline"
+    spec:
+      - question_name: "Device Hostnames"
+        question_description: "Enter device hostnames, comma separated (one site)"
+        required: true
+        type: "text"
+        variable: "device_hostnames"
+
+  "{{ .Values.HELIOS_APP_CODE }}_ibns_precheck_{{ .Values.HELIOS_APP_NAME }}":
+    name: "IBNS pre-check"
+    description: "Read-only go/no-go checks"
+    spec:
+      - question_name: "Device Hostnames"
+        question_description: "Enter device hostnames, comma separated (one site)"
+        required: true
+        type: "text"
+        variable: "device_hostnames"
+
+  "{{ .Values.HELIOS_APP_CODE }}_ibns_stage1_convert_{{ .Values.HELIOS_APP_NAME }}":
+    name: "IBNS stage 1 - convert"
+    description: "Convert legacy dot1x to new-style in place (one-way)"
+    spec:
+      - question_name: "Device Hostnames"
+        question_description: "Enter device hostnames, comma separated (one site)"
+        required: true
+        type: "text"
+        variable: "device_hostnames"
+      - question_name: "Change Number"
+        question_description: "ServiceNow change number (required when Dry Run is false)"
+        required: false
+        type: "text"
+        variable: "change_number"
+      - question_name: "Dry Run"
+        question_description: "true = show what would change, change nothing"
+        required: true
+        type: "multiplechoice"
+        variable: "dry_run"
+        default: "true"
+        choices:
+          - "true"
+          - "false"
+
+  "{{ .Values.HELIOS_APP_CODE }}_ibns_stage2_golden_{{ .Values.HELIOS_APP_NAME }}":
+    name: "IBNS stage 2 - golden config"
+    description: "Add golden config alongside and re-point access ports"
+    spec:
+      - question_name: "Device Hostnames"
+        question_description: "Enter device hostnames, comma separated (one site)"
+        required: true
+        type: "text"
+        variable: "device_hostnames"
+      - question_name: "Change Number"
+        question_description: "ServiceNow change number (required when Dry Run is false)"
+        required: false
+        type: "text"
+        variable: "change_number"
+      - question_name: "Dry Run"
+        question_description: "true = show rendered config and port plan, change nothing"
+        required: true
+        type: "multiplechoice"
+        variable: "dry_run"
+        default: "true"
+        choices:
+          - "true"
+          - "false"
+
+  "{{ .Values.HELIOS_APP_CODE }}_ibns_nextday_check_{{ .Values.HELIOS_APP_NAME }}":
+    name: "IBNS next-day check"
+    description: "Read-only comparison against the daytime baseline"
+    spec:
+      - question_name: "Device Hostnames"
+        question_description: "Enter device hostnames, comma separated (one site)"
+        required: true
+        type: "text"
+        variable: "device_hostnames"
+      - question_name: "Completed Stage"
+        question_description: "Last stage completed on these switches"
+        required: true
+        type: "multiplechoice"
+        variable: "ibns_completed_stage"
+        default: "golden"
+        choices:
+          - "converted"
+          - "golden"
+
+  "{{ .Values.HELIOS_APP_CODE }}_ibns_rollback_golden_{{ .Values.HELIOS_APP_NAME }}":
+    name: "IBNS rollback golden"
+    description: "Re-point ports back to the converted config (no reload)"
+    spec:
+      - question_name: "Device Hostnames"
+        question_description: "Enter device hostnames, comma separated (one site)"
+        required: true
+        type: "text"
+        variable: "device_hostnames"
+      - question_name: "Change Number"
+        question_description: "ServiceNow change number (required when Dry Run is false)"
+        required: false
+        type: "text"
+        variable: "change_number"
+      - question_name: "Rollback Snapshot"
+        question_description: "Leave empty for the latest stage 2 run, or enter stage2-rollback-<run id>.json"
+        required: false
+        type: "text"
+        variable: "ibns_rollback_snapshot"
+      - question_name: "Dry Run"
+        question_description: "true = show rollback commands, change nothing"
+        required: true
+        type: "multiplechoice"
+        variable: "dry_run"
+        default: "true"
+        choices:
+          - "true"
+          - "false"
+
+  "{{ .Values.HELIOS_APP_CODE }}_ibns_stage3_cleanup_{{ .Values.HELIOS_APP_NAME }}":
+    name: "IBNS stage 3 - cleanup"
+    description: "Remove converted config nothing references"
+    spec:
+      - question_name: "Device Hostnames"
+        question_description: "Enter device hostnames, comma separated (one site)"
+        required: true
+        type: "text"
+        variable: "device_hostnames"
+      - question_name: "Change Number"
+        question_description: "ServiceNow change number (required when Dry Run is false)"
+        required: false
+        type: "text"
+        variable: "change_number"
+      - question_name: "Dry Run"
+        question_description: "true = list what would be removed, change nothing"
+        required: true
+        type: "multiplechoice"
+        variable: "dry_run"
+        default: "true"
+        choices:
+          - "true"
+          - "false"

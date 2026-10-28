@@ -1,0 +1,64 @@
+# ansible/playbooks/ibns_rollback_golden.yml
+# RUN ONLY WHEN NEEDED (manual): undo stage 2 on a switch, e.g. after an issue
+# found in the next-day check. Uses the rollback data stage 2 saved.
+# Set ibns_rollback_snapshot to a dated file to roll back to a specific run.
+# Pushed through Catalyst Center (roles/ibns_push).
+---
+- name: Resolve targets
+  ansible.builtin.import_playbook: ibns_target.yml
+  vars:
+    ibns_requires_change: true
+
+- name: Roll back golden config to the converted config
+  hosts: ibns_targets
+  gather_facts: false
+  serial: "{{ ibns_serial | default(5) }}"
+  vars:
+    ibns_run_id: "{{ hostvars['localhost']['ibns_run_id'] }}"
+    ibns_stage_tag: rollback-golden
+  tasks:
+    - name: Collect switch state
+      ansible.builtin.include_role:
+        name: ibns_collect
+
+    - name: Load the rollback data saved by stage 2
+      ansible.builtin.include_role:
+        name: ibns_snapshot
+        tasks_from: load
+      vars:
+        snapshot_name: "{{ ibns_rollback_snapshot | default('stage2-rollback-latest.json') }}"
+
+    - name: Prepare rollback inputs
+      ansible.builtin.set_fact:
+        ibns_rollback_data: "{{ ibns_loaded }}"
+        ibns_pre: "{{ ibns_loaded }}"
+
+    - name: Back up the current config
+      ansible.builtin.include_role:
+        name: ibns_backup
+
+    - name: Re-point ports back to the converted config
+      ansible.builtin.include_role:
+        name: ibns_rollback_golden
+
+    - name: Post-check against the state saved before stage 2
+      ansible.builtin.include_role:
+        name: ibns_postcheck
+      vars:
+        ibns_check_stage: converted
+
+    - name: Save config (rollback verified)
+      when:
+        - not (dry_run | bool)
+        - ibns_check_passed | bool
+      ansible.builtin.include_role:
+        name: ibns_save
+
+    - name: Report
+      ansible.builtin.include_role:
+        name: ibns_report
+      vars:
+        ibns_result:
+          stage: rollback-golden
+          outcome: "{{ 'dry-run' if dry_run | bool else ('rolled-back' if ibns_check_passed | bool else 'ROLLBACK-CHECK-FAILED') }}"
+          detail: "{{ ibns_check.config_findings + (ibns_check.sessions.failures | map(attribute='detail') | list) }}"

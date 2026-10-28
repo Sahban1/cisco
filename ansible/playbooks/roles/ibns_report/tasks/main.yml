@@ -1,0 +1,19 @@
+# roles/ibns_report/tasks/main.yml
+# Publishes the per-switch result as AAP job artifacts (set_stats). The existing
+# NetValidator notification webhook forwards job.artifacts to Odyssey.
+# Input: ibns_result (dict built by the stage playbook).
+---
+- name: Publish result as job artifact
+  ansible.builtin.set_stats:
+    data:
+      ibns_results: "{{ {inventory_hostname: ibns_result} }}"
+    aggregate: true
+    per_host: false
+
+- name: Show result
+  ansible.builtin.debug:
+    msg:
+      - "Host:    {{ inventory_hostname }}"
+      - "Stage:   {{ ibns_result.stage }}"
+      - "Outcome: {{ ibns_result.outcome }}"
+      - "Detail:  {{ ibns_result.detail | default('') }}"

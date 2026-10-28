@@ -1,0 +1,186 @@
+{{/* This file is a template for your AAP project's job template objects.
+   * REPLACES ud00's controller_templates.yml (SWIM, CML, flash cleanup, vManage).
+   * Same structure as ud00: one entry per playbook. Keep names in sync with
+   * controller_survey_specs.yml (survey keys must equal template names).
+   * Every IBNS job reaches switches ONLY through Catalyst Center, so the jobs
+   * carry the DNAC service-ID credential (service_id_dnac), not a switch login.
+   * CONFIRM with Gurkirat: that this DNAC account may run Command Runner and
+   * deploy templates, and how Artifactory snapshot credentials reach the job. */}}
+
+app_controller_templates:
+  - name: "{{ .Values.HELIOS_APP_CODE }}_noop_{{ .Values.HELIOS_APP_NAME }}"
+    job_type: "run"
+    playbook: "ansible/playbooks/noop.yml"
+    inventory: "{{ include "aap.resource_names.inventory_by_env" . }}"
+    execution_environment: "{{ .Values.HELIOS_APP_CODE }}_Ansible2.16ExecEnv_{{ .Values.HELIOS_APP_NAME }}"
+    extra_vars:
+      helios:
+        app_code: "{{ .Values.HELIOS_APP_CODE }}"
+        repo_name: "{{ .Values.HELIOS_REPO_NAME }}"
+        vault_env: "{{ .Values.VAULT_ENV }}"
+    project: "{{ include "aap.resource_names.project" . }}"
+    survey_enabled: true
+    description: "Template for a noop job which does nothing. Useful for testing the AAP job execution framework."
+    state: "present"
+    verbosity: {{ .Values.job_template_verbosity | default 0 }}
+    credentials: []
+
+  - name: "{{ .Values.HELIOS_APP_CODE }}_ibns_classify_{{ .Values.HELIOS_APP_NAME }}"
+    job_type: "run"
+    playbook: "ansible/playbooks/ibns_classify.yml"
+    inventory: "{{ include "aap.resource_names.inventory_by_env" . }}"
+    execution_environment: "{{ .Values.HELIOS_APP_CODE }}_Ansible2.16ExecEnv_{{ .Values.HELIOS_APP_NAME }}"
+    extra_vars:
+      helios:
+        app_code: "{{ .Values.HELIOS_APP_CODE }}"
+        repo_name: "{{ .Values.HELIOS_REPO_NAME }}"
+        vault_env: "{{ .Values.VAULT_ENV }}"
+      ibns_snapshot_backend: "artifactory"
+    project: "{{ include "aap.resource_names.project" . }}"
+    survey_enabled: true
+    description: "IBNS 0 - Read-only. Classify every port by description and config; list ports that will migrate and ports held for a fix."
+    state: "present"
+    verbosity: {{ .Values.job_template_verbosity | default 0 }}
+    credentials:
+      - "{{ include "aap.resource_names_reserved.vault_app_roles" . }}"
+      - "{{ .Values.HELIOS_APP_CODE }}_service_id_dnac_{{ .Values.HELIOS_APP_NAME }}"
+
+  - name: "{{ .Values.HELIOS_APP_CODE }}_ibns_baseline_{{ .Values.HELIOS_APP_NAME }}"
+    job_type: "run"
+    playbook: "ansible/playbooks/ibns_baseline.yml"
+    inventory: "{{ include "aap.resource_names.inventory_by_env" . }}"
+    execution_environment: "{{ .Values.HELIOS_APP_CODE }}_Ansible2.16ExecEnv_{{ .Values.HELIOS_APP_NAME }}"
+    extra_vars:
+      helios:
+        app_code: "{{ .Values.HELIOS_APP_CODE }}"
+        repo_name: "{{ .Values.HELIOS_REPO_NAME }}"
+        vault_env: "{{ .Values.VAULT_ENV }}"
+      ibns_snapshot_backend: "artifactory"
+    project: "{{ include "aap.resource_names.project" . }}"
+    survey_enabled: true
+    description: "IBNS 1 - Read-only. Capture the daytime session baseline for a site (run during business hours)."
+    state: "present"
+    verbosity: {{ .Values.job_template_verbosity | default 0 }}
+    credentials:
+      - "{{ include "aap.resource_names_reserved.vault_app_roles" . }}"
+      - "{{ .Values.HELIOS_APP_CODE }}_service_id_dnac_{{ .Values.HELIOS_APP_NAME }}"
+
+  - name: "{{ .Values.HELIOS_APP_CODE }}_ibns_precheck_{{ .Values.HELIOS_APP_NAME }}"
+    job_type: "run"
+    playbook: "ansible/playbooks/ibns_precheck.yml"
+    inventory: "{{ include "aap.resource_names.inventory_by_env" . }}"
+    execution_environment: "{{ .Values.HELIOS_APP_CODE }}_Ansible2.16ExecEnv_{{ .Values.HELIOS_APP_NAME }}"
+    extra_vars:
+      helios:
+        app_code: "{{ .Values.HELIOS_APP_CODE }}"
+        repo_name: "{{ .Values.HELIOS_REPO_NAME }}"
+        vault_env: "{{ .Values.VAULT_ENV }}"
+      ibns_snapshot_backend: "artifactory"
+    project: "{{ include "aap.resource_names.project" . }}"
+    survey_enabled: true
+    description: "IBNS 2 - Read-only go/no-go pre-check before the change window."
+    state: "present"
+    verbosity: {{ .Values.job_template_verbosity | default 0 }}
+    credentials:
+      - "{{ include "aap.resource_names_reserved.vault_app_roles" . }}"
+      - "{{ .Values.HELIOS_APP_CODE }}_service_id_dnac_{{ .Values.HELIOS_APP_NAME }}"
+
+  - name: "{{ .Values.HELIOS_APP_CODE }}_ibns_stage1_convert_{{ .Values.HELIOS_APP_NAME }}"
+    job_type: "run"
+    playbook: "ansible/playbooks/ibns_stage1_convert.yml"
+    inventory: "{{ include "aap.resource_names.inventory_by_env" . }}"
+    execution_environment: "{{ .Values.HELIOS_APP_CODE }}_Ansible2.16ExecEnv_{{ .Values.HELIOS_APP_NAME }}"
+    extra_vars:
+      helios:
+        app_code: "{{ .Values.HELIOS_APP_CODE }}"
+        repo_name: "{{ .Values.HELIOS_REPO_NAME }}"
+        vault_env: "{{ .Values.VAULT_ENV }}"
+      ibns_snapshot_backend: "artifactory"
+    project: "{{ include "aap.resource_names.project" . }}"
+    survey_enabled: true
+    description: "IBNS 3 - Stage 1: convert legacy dot1x to new-style in place (one-way). Saves only if the post-check passes."
+    state: "present"
+    verbosity: {{ .Values.job_template_verbosity | default 0 }}
+    credentials:
+      - "{{ include "aap.resource_names_reserved.vault_app_roles" . }}"
+      - "{{ .Values.HELIOS_APP_CODE }}_service_id_dnac_{{ .Values.HELIOS_APP_NAME }}"
+
+  - name: "{{ .Values.HELIOS_APP_CODE }}_ibns_stage2_golden_{{ .Values.HELIOS_APP_NAME }}"
+    job_type: "run"
+    playbook: "ansible/playbooks/ibns_stage2_golden.yml"
+    inventory: "{{ include "aap.resource_names.inventory_by_env" . }}"
+    execution_environment: "{{ .Values.HELIOS_APP_CODE }}_Ansible2.16ExecEnv_{{ .Values.HELIOS_APP_NAME }}"
+    extra_vars:
+      helios:
+        app_code: "{{ .Values.HELIOS_APP_CODE }}"
+        repo_name: "{{ .Values.HELIOS_REPO_NAME }}"
+        vault_env: "{{ .Values.VAULT_ENV }}"
+      ibns_snapshot_backend: "artifactory"
+    project: "{{ include "aap.resource_names.project" . }}"
+    survey_enabled: true
+    description: "IBNS 4 - Stage 2: add golden config alongside, re-point access ports. Rolls back automatically if the post-check fails."
+    state: "present"
+    verbosity: {{ .Values.job_template_verbosity | default 0 }}
+    credentials:
+      - "{{ include "aap.resource_names_reserved.vault_app_roles" . }}"
+      - "{{ .Values.HELIOS_APP_CODE }}_service_id_dnac_{{ .Values.HELIOS_APP_NAME }}"
+
+  - name: "{{ .Values.HELIOS_APP_CODE }}_ibns_nextday_check_{{ .Values.HELIOS_APP_NAME }}"
+    job_type: "run"
+    playbook: "ansible/playbooks/ibns_nextday_check.yml"
+    inventory: "{{ include "aap.resource_names.inventory_by_env" . }}"
+    execution_environment: "{{ .Values.HELIOS_APP_CODE }}_Ansible2.16ExecEnv_{{ .Values.HELIOS_APP_NAME }}"
+    extra_vars:
+      helios:
+        app_code: "{{ .Values.HELIOS_APP_CODE }}"
+        repo_name: "{{ .Values.HELIOS_REPO_NAME }}"
+        vault_env: "{{ .Values.VAULT_ENV }}"
+      ibns_snapshot_backend: "artifactory"
+    project: "{{ include "aap.resource_names.project" . }}"
+    survey_enabled: true
+    description: "IBNS 5 - Read-only. Next-morning comparison against the daytime baseline."
+    state: "present"
+    verbosity: {{ .Values.job_template_verbosity | default 0 }}
+    credentials:
+      - "{{ include "aap.resource_names_reserved.vault_app_roles" . }}"
+      - "{{ .Values.HELIOS_APP_CODE }}_service_id_dnac_{{ .Values.HELIOS_APP_NAME }}"
+
+  - name: "{{ .Values.HELIOS_APP_CODE }}_ibns_rollback_golden_{{ .Values.HELIOS_APP_NAME }}"
+    job_type: "run"
+    playbook: "ansible/playbooks/ibns_rollback_golden.yml"
+    inventory: "{{ include "aap.resource_names.inventory_by_env" . }}"
+    execution_environment: "{{ .Values.HELIOS_APP_CODE }}_Ansible2.16ExecEnv_{{ .Values.HELIOS_APP_NAME }}"
+    extra_vars:
+      helios:
+        app_code: "{{ .Values.HELIOS_APP_CODE }}"
+        repo_name: "{{ .Values.HELIOS_REPO_NAME }}"
+        vault_env: "{{ .Values.VAULT_ENV }}"
+      ibns_snapshot_backend: "artifactory"
+    project: "{{ include "aap.resource_names.project" . }}"
+    survey_enabled: true
+    description: "IBNS rollback (manual) - re-point ports from the golden config back to the converted config. No reload."
+    state: "present"
+    verbosity: {{ .Values.job_template_verbosity | default 0 }}
+    credentials:
+      - "{{ include "aap.resource_names_reserved.vault_app_roles" . }}"
+      - "{{ .Values.HELIOS_APP_CODE }}_service_id_dnac_{{ .Values.HELIOS_APP_NAME }}"
+
+  - name: "{{ .Values.HELIOS_APP_CODE }}_ibns_stage3_cleanup_{{ .Values.HELIOS_APP_NAME }}"
+    job_type: "run"
+    playbook: "ansible/playbooks/ibns_stage3_cleanup.yml"
+    inventory: "{{ include "aap.resource_names.inventory_by_env" . }}"
+    execution_environment: "{{ .Values.HELIOS_APP_CODE }}_Ansible2.16ExecEnv_{{ .Values.HELIOS_APP_NAME }}"
+    extra_vars:
+      helios:
+        app_code: "{{ .Values.HELIOS_APP_CODE }}"
+        repo_name: "{{ .Values.HELIOS_REPO_NAME }}"
+        vault_env: "{{ .Values.VAULT_ENV }}"
+      ibns_snapshot_backend: "artifactory"
+    project: "{{ include "aap.resource_names.project" . }}"
+    survey_enabled: true
+    description: "IBNS 6 - Stage 3 (after soak): remove converted config nothing references."
+    state: "present"
+    verbosity: {{ .Values.job_template_verbosity | default 0 }}
+    credentials:
+      - "{{ include "aap.resource_names_reserved.vault_app_roles" . }}"
+      - "{{ .Values.HELIOS_APP_CODE }}_service_id_dnac_{{ .Values.HELIOS_APP_NAME }}"

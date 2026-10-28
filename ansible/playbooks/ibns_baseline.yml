@@ -1,0 +1,38 @@
+# ansible/playbooks/ibns_baseline.yml
+# RUN ORDER: 1 (one or two days before the change, DURING BUSINESS HOURS)
+# Read-only. Records which ports authenticate and how, for the next-day check.
+---
+- name: Resolve targets
+  ansible.builtin.import_playbook: ibns_target.yml
+
+- name: Capture daytime session baseline (read-only)
+  hosts: ibns_targets
+  gather_facts: false
+  vars:
+    ibns_run_id: "{{ hostvars['localhost']['ibns_run_id'] }}"
+  tasks:
+    - name: Collect switch state
+      ansible.builtin.include_role:
+        name: ibns_collect
+
+    - name: Save baseline (dated copy and latest)
+      ansible.builtin.include_role:
+        name: ibns_snapshot
+        tasks_from: save
+      vars:
+        snapshot_name: "{{ item }}"
+        snapshot_content: "{{ {'collected_at': ibns_state.collected_at, 'sessions': ibns_state.sessions, 'port_classes': ibns_state.port_classes, 'port_plan': ibns_state.port_plan, 'config_mode': ibns_state.config_mode} | to_nice_json }}"
+      loop:
+        - "baseline-{{ ibns_run_id }}.json"
+        - "baseline-latest.json"
+
+    - name: Report
+      ansible.builtin.include_role:
+        name: ibns_report
+      vars:
+        ibns_result:
+          stage: baseline
+          outcome: recorded
+          detail: >-
+            {{ ibns_state.sessions | length }} sessions on
+            {{ ibns_state.sessions | map(attribute='interface') | unique | list | length }} ports

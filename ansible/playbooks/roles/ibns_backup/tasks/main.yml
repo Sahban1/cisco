@@ -1,0 +1,21 @@
+# roles/ibns_backup/tasks/main.yml
+# Saves the running config off-box (snapshot store) and on the switch's flash
+# (through Catalyst Center). Catalyst Center's own config archive is a third copy.
+# Inputs: ibns_stage_tag (e.g. "stage1"), ibns_run_id, ibns_state (from ibns_collect)
+---
+- name: Save running config to the snapshot store
+  ansible.builtin.include_role:
+    name: ibns_snapshot
+    tasks_from: save
+  vars:
+    snapshot_name: "running-before-{{ ibns_stage_tag }}-{{ ibns_run_id }}.cfg"
+    snapshot_content: "{{ ibns_state.running }}"
+
+- name: Copy running config to flash
+  when: ibns_flash_backup | bool
+  ansible.builtin.include_role:
+    name: ibns_push
+  vars:
+    ibns_backup_file: "ibns-before-{{ ibns_stage_tag }}-{{ ibns_run_id }}.cfg"
+    ibns_push_step: backup
+    ibns_push_cli: "{{ [{'command': 'copy running-config flash:' ~ ibns_backup_file, 'prompt': 'Destination filename', 'answer': ibns_backup_file}] | ibns_cli_exec }}"

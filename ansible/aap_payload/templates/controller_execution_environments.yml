@@ -1,0 +1,12 @@
+---
+{{/* COPIED FROM ud00 AND EDITED: removed the vManage execution environment.
+   * VERIFY the image tag against ud00. IBNS needs no collections (its
+   * Catalyst Center modules use ansible-core only), so this image works as is. */}}
+app_controller_execution_environments:
+  # Image with Ansible-core 2.16 - CURRENT VERSION
+  # TODO: Pin image by SHA256 digest for supply chain security (e.g., image@sha256:<hash>)
+  - name: "{{ .Values.HELIOS_APP_CODE }}_Ansible2.16ExecEnv_{{ .Values.HELIOS_APP_NAME }}"
+    state: present
+    image: docker-secure-ud00.rbcartifactory.fg.rbc.com/aap/execution-environments/ud00-ee-ansible-execution-environment:0.0.13
+    credential: "{{ .Values.HELIOS_APP_CODE }}_Artifactory_{{ .Values.HELIOS_APP_NAME }}"
+    description: "CURRENT VERSION - With Python 3.11 and ansible-core 2.16.7."

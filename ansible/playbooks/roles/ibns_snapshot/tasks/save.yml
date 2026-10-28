@@ -1,0 +1,40 @@
+# roles/ibns_snapshot/tasks/save.yml
+# Saves one snapshot for the current host.
+# Inputs: snapshot_name (e.g. "baseline.json"), snapshot_content (string)
+# Backend "local" = a folder on the machine running Ansible (laptop runs only:
+#   AAP containers are thrown away after each job).
+# Backend "artifactory" = a generic Artifactory repo, so AAP jobs on different
+#   days can read each other's snapshots (baseline -> next-day check).
+---
+- name: Save snapshot to local folder
+  when: ibns_snapshot_backend == "local"
+  delegate_to: localhost
+  vars:
+    ansible_connection: local
+  block:
+    - name: Create host snapshot folder
+      ansible.builtin.file:
+        path: "{{ ibns_snapshot_dir }}/{{ inventory_hostname }}"
+        state: directory
+        mode: "0700"
+
+    - name: Write snapshot file
+      ansible.builtin.copy:
+        content: "{{ snapshot_content }}"
+        dest: "{{ ibns_snapshot_dir }}/{{ inventory_hostname }}/{{ snapshot_name }}"
+        mode: "0600"
+
+- name: Save snapshot to Artifactory
+  when: ibns_snapshot_backend == "artifactory"
+  ansible.builtin.uri:
+    url: "{{ ibns_artifactory_url }}/{{ inventory_hostname }}/{{ snapshot_name }}"
+    method: PUT
+    body: "{{ snapshot_content }}"
+    url_username: "{{ lookup('env', 'ARTIFACTORY_USERNAME') }}"
+    url_password: "{{ lookup('env', 'ARTIFACTORY_PASSWORD') }}"
+    force_basic_auth: true
+    status_code: [200, 201]
+    validate_certs: true
+  delegate_to: localhost
+  vars:
+    ansible_connection: local

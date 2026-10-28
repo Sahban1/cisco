@@ -1,0 +1,29 @@
+{# ansible/templates/ibns2/interface_templates.j2
+   Golden interface templates, one per port class (see ibns_port_templates).
+   DRAFT: replace with the approved standard and tune timers in the lab.
+   closed mode     = no traffic before authentication (access-session closed)
+   low-impact mode = pre-auth ACL allows DHCP/DNS etc. before authentication #}
+{% for name, host_mode, methods in [
+     ('IBNS2_MDA', 'multi-domain', ['dot1x', 'mab']),
+     ('IBNS2_DOT1X_MAB', 'multi-auth', ['dot1x', 'mab']),
+     ('IBNS2_MAB', 'multi-auth', ['mab']) ] %}
+template {{ name }}
+{% if 'dot1x' in methods %}
+ dot1x pae authenticator
+ dot1x timeout tx-period {{ ibns_dot1x_tx_period }}
+ dot1x max-reauth-req {{ ibns_dot1x_max_reauth_req }}
+{% endif %}
+ mab
+ access-session host-mode {{ host_mode }}
+{% if ibns_mode == 'closed' %}
+ access-session closed
+{% else %}
+ ip access-group {{ ibns_preauth_acl }} in
+{% endif %}
+ access-session port-control auto
+ authentication periodic
+ authentication timer reauthenticate server
+ authentication timer inactivity server dynamic
+ service-policy type control subscriber {{ ibns_policy_name }}
+!
+{% endfor %}

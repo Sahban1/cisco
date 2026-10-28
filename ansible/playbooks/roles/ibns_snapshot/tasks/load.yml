@@ -1,0 +1,29 @@
+# roles/ibns_snapshot/tasks/load.yml
+# Loads one snapshot for the current host into the fact `ibns_loaded` (parsed JSON).
+# Input: snapshot_name. Fails clearly if the snapshot doesn't exist.
+---
+- name: Load snapshot from local folder
+  when: ibns_snapshot_backend == "local"
+  ansible.builtin.set_fact:
+    ibns_loaded: "{{ lookup('ansible.builtin.file', ibns_snapshot_dir ~ '/' ~ inventory_hostname ~ '/' ~ snapshot_name) | from_json }}"
+
+- name: Load snapshot from Artifactory
+  when: ibns_snapshot_backend == "artifactory"
+  block:
+    - name: Download snapshot
+      ansible.builtin.uri:
+        url: "{{ ibns_artifactory_url }}/{{ inventory_hostname }}/{{ snapshot_name }}"
+        method: GET
+        url_username: "{{ lookup('env', 'ARTIFACTORY_USERNAME') }}"
+        url_password: "{{ lookup('env', 'ARTIFACTORY_PASSWORD') }}"
+        force_basic_auth: true
+        return_content: true
+        validate_certs: true
+      register: ibns_download
+      delegate_to: localhost
+      vars:
+        ansible_connection: local
+
+    - name: Parse snapshot
+      ansible.builtin.set_fact:
+        ibns_loaded: "{{ ibns_download.content | from_json }}"

@@ -1,0 +1,52 @@
+# ansible/playbooks/ibns_classify.yml
+# RUN ORDER: 0b (after discovery, before the baseline; re-run any time)
+# Read-only. Classifies every physical port by description (role) and config
+# (class), and shows which ports will migrate, which are held and why.
+# Fix held ports (description or config) BEFORE the change, or raise
+# ibns_max_held_ports for that site on purpose.
+---
+- name: Resolve targets
+  ansible.builtin.import_playbook: ibns_target.yml
+
+- name: Classify ports (read-only)
+  hosts: ibns_targets
+  gather_facts: false
+  vars:
+    ibns_run_id: "{{ hostvars['localhost']['ibns_run_id'] }}"
+  tasks:
+    - name: Collect switch state
+      ansible.builtin.include_role:
+        name: ibns_collect
+
+    - name: Show every port (interface | role | config class | action | description | reason)
+      ansible.builtin.debug:
+        msg: "{{ item.key }} | {{ item.value.role or '-' }} | {{ item.value.config_class }} | {{ item.value.action }} | {{ item.value.description }}{{ (' | ' ~ item.value.reason) if item.value.reason else '' }}"
+      loop: "{{ ibns_state.port_inventory | dict2items }}"
+      loop_control:
+        label: "{{ item.key }}"
+
+    - name: Save the port inventory
+      ansible.builtin.include_role:
+        name: ibns_snapshot
+        tasks_from: save
+      vars:
+        snapshot_name: "classify-{{ ibns_run_id }}.json"
+        snapshot_content: "{{ {'collected_at': ibns_state.collected_at, 'port_inventory': ibns_state.port_inventory, 'port_plan': ibns_state.port_plan, 'held_ports': ibns_state.held_ports} | to_nice_json }}"
+
+    - name: Report
+      ansible.builtin.include_role:
+        name: ibns_report
+      vars:
+        ibns_summary: "{{ ibns_state.port_inventory | ibns_port_summary }}"
+        ibns_result:
+          stage: classify
+          outcome: >-
+            {{ 'NEEDS-FIX' if ibns_state.held_ports | length > ibns_max_held_ports | int else
+               ('ready' if ibns_state.port_plan | length > 0 else
+               ('done' if ibns_summary.action.done | default(0) > 0 else 'NOTHING-TO-MIGRATE')) }}
+          detail: >-
+            {{ ibns_summary.ports }} ports: migrate {{ ibns_summary.action.migrate | default(0) }},
+            hold {{ ibns_summary.action.hold | default(0) }}, leave {{ ibns_summary.action.leave | default(0) }},
+            done {{ ibns_summary.action.done | default(0) }};
+            roles {{ ibns_summary.role }};
+            held: {{ ibns_state.held_ports }}

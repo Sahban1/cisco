@@ -1,0 +1,21 @@
+# roles/ibns_save/tasks/main.yml
+# Saves the config (write memory) through Catalyst Center, then asks Catalyst
+# Center to resync the switch so its inventory and config archive are current.
+# Call only after a passed post-check. Note: a Catalyst Center deployment may
+# already save the config itself (UI option "Copy running config to startup
+# config", on by default). VERIFY in the lab what an API deployment does.
+---
+- name: Save the config
+  ansible.builtin.include_role:
+    name: ibns_push
+  vars:
+    ibns_push_step: save
+    ibns_push_cli: "{{ ['write memory'] | ibns_cli_exec }}"
+
+- name: Resync the switch in Catalyst Center
+  when: not (dry_run | bool)
+  catc_device:
+    catc: "{{ catc }}"
+    hostname: "{{ inventory_hostname }}"
+    sync: true
+  failed_when: false

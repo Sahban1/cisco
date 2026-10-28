@@ -1,0 +1,37 @@
+# roles/inventory_lookup/tasks/main.yml
+# COPIED FROM ud00 AND EDITED. Four changes from the ud00 version:
+#   1. group swim_devices        -> ibns_targets
+#   2. subgroup prefix swim_     -> ibns_
+#   3. controller_host falls back to 'lab' for hosts from the static lab
+#      inventory (they have no dnac_host); the vManage fallback is removed.
+#   4. hosts run LOCALLY (ansible_connection: local): IBNS never logs into a
+#      switch; every task talks to Catalyst Center from the controller.
+---
+- name: Validate device_list is non-empty and contains no blank entries
+  ansible.builtin.fail:
+    msg: "device_list is empty or contains blank entries. Refusing to match all DNAC devices."
+  when: (device_list | length == 0) or ('' in device_list)
+
+- name: Match each survey device against the AAP inventory (case-insensitive exact match required)
+  vars:
+    matched: "{{ groups['all'] | select('match', '(?i)^' ~ (item | regex_escape) ~ '(\\.|$)') | list }}"
+  ansible.builtin.fail:
+    msg: >-
+      Device '{{ item }}' matched {{ matched | length }} host(s) in inventory:
+      [{{ matched | join(', ') }}]. Expected exactly 1 case-insensitive exact match.
+  when: matched | length != 1
+  loop: "{{ device_list }}"
+
+- name: Add matched inventory hosts to ibns_targets group
+  vars:
+    matched: "{{ groups['all'] | select('match', '(?i)^' ~ (item | regex_escape) ~ '(\\.|$)') | list }}"
+    controller_host: "{{ hostvars[matched[0]].dnac_host | default('lab') }}"
+    controller_subgroup: "ibns_{{ controller_host | regex_replace('[^a-zA-Z0-9_]', '_') | lower }}"
+  ansible.builtin.add_host:
+    name: "{{ matched[0] }}"
+    groups:
+      - ibns_targets
+      - "{{ controller_subgroup }}"
+    ansible_connection: local
+    ansible_python_interpreter: "{{ ansible_playbook_python }}"
+  loop: "{{ device_list }}"

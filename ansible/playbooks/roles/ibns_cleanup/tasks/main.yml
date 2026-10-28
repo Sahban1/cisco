@@ -1,0 +1,21 @@
+# roles/ibns_cleanup/tasks/main.yml
+# Stage 3: remove converted control-policy objects that nothing references,
+# pushed through Catalyst Center. Never by name pattern: the filter only returns
+# objects with no references, and never anything listed in ibns_golden_names.
+# Input: ibns_state (from pre-check)
+---
+- name: Find unreferenced policy-maps, class-maps and service templates
+  ansible.builtin.set_fact:
+    ibns_orphans: "{{ ibns_state.running | ibns_find_orphans(ibns_golden_names) }}"
+
+- name: Show what would be removed
+  ansible.builtin.debug:
+    msg: "{{ ibns_orphans if ibns_orphans | length > 0 else 'Nothing to clean up.' }}"
+
+- name: Remove unreferenced objects
+  when: ibns_orphans | length > 0
+  ansible.builtin.include_role:
+    name: ibns_push
+  vars:
+    ibns_push_step: cleanup
+    ibns_push_cli: "{{ ibns_orphans | join('\n') }}"

@@ -1,0 +1,15 @@
+# roles/ibns_rollback_golden/tasks/main.yml
+# Stage 2 rollback, pushed through Catalyst Center: put each re-pointed port back
+# on its converted config. Saved interface lines are restored FIRST, then the
+# golden template is detached. No reload, no write erase. Golden global objects
+# stay (unused, harmless). A failed push is recorded, not fatal: the post-check
+# that follows decides the outcome.
+# Input: ibns_rollback_data (snapshot saved by ibns_golden)
+---
+- name: Re-point ports back to their converted config
+  ansible.builtin.include_role:
+    name: ibns_push
+  vars:
+    ibns_push_step: rollback-golden
+    ibns_push_cli: "{{ ibns_rollback_data.port_plan | ibns_rollback_cli(ibns_rollback_data.auth_lines) }}"
+    ibns_push_may_fail: true

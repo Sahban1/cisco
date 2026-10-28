@@ -1,0 +1,6 @@
+# gitignore-additions.txt
+# Lines to ADD to the .gitignore copied from ud00 (keep all of ud00's lines).
+.venv/
+collections/
+reports/raw/
+.pytest_cache/

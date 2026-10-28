@@ -1,0 +1,24 @@
+{{/* This file is a template for your AAP project's inventory object sources. You'll typically change this file
+   * when adding, removing, or updating inventory files for your project's VM hosts.
+   * Config reference: https://rbcgithub.fg.rbc.com/rbc-to/apg0-ansible-docs/blob/main/references/helios/templates/inventory_sources.md
+   * See also: controller_inventory.yml */}}
+{{/* COPIED FROM ud00 AND EDITED: kept only the Catalyst Center (dnac.yml) source;
+   * removed the two SD-WAN vManage sources. The remaining entry is unchanged. */}}
+
+app_controller_inventory_sources:
+  - name:                  "{{ include "aap.resource_names.inventory_source_by_env" . }}"
+    description:           "{{ .Values.aap.controller_host.env_name }} environment host inventory source from RBC GitHub."
+    inventory:             "{{ include "aap.resource_names.inventory_by_env" . }}"
+    organization:          "{{ .Values.HELIOS_APP_CODE }}"
+    source:                "scm"
+    source_project:        "{{ include "aap.resource_names.project" . }}"
+    source_path:           "ansible/inventories/{{ .Values.aap.controller_host.env_name | lower }}/dnac.yml"
+    overwrite:             false
+    update_on_launch:      false
+    credential:            "{{ .Values.HELIOS_APP_CODE }}_service_id_dnac_{{ .Values.HELIOS_APP_NAME }}"
+    execution_environment: "{{ .Values.HELIOS_APP_CODE }}_Ansible2.16ExecEnv_{{ .Values.HELIOS_APP_NAME }}"
+    extra_vars:
+      helios:
+        app_code: "{{ .Values.HELIOS_APP_CODE }}"
+        repo_name: "{{ .Values.HELIOS_REPO_NAME }}"
+        vault_env: "{{ .Values.VAULT_ENV }}"

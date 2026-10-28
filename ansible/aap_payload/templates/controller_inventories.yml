@@ -1,0 +1,17 @@
+{{/* This file is a template for your AAP project's inventory objects. You'll typically change this file
+   * when adding, removing, or updating inventory files for your project's VM hosts.
+   * Config reference: See internal AAP docs for inventories configuration
+   * See also: controller_inventory_source.yml */}}
+{{/* COPIED FROM ud00 AND EDITED: removed the SD-WAN vManage inventory and the
+   * SD-WAN certification inventory. The two remaining entries are unchanged. */}}
+
+app_controller_inventories:
+  - name:         "{{ include "aap.resource_names.inventory_by_env" . }}"
+    description:  "{{ .Values.aap.controller_host.env_name }} host inventory for {{ .Values.HELIOS_APP_NAME }}."
+    organization: "{{ .Values.HELIOS_APP_CODE }}"
+    state:        "present"
+
+  - name:         "{{ .Values.HELIOS_APP_CODE }}_lab_inventory{{ .Values.HELIOS_APP_NAME }}"
+    description:  "Inventory for the lab controllers"
+    organization: "{{ .Values.HELIOS_APP_CODE }}"
+    state:        "present"

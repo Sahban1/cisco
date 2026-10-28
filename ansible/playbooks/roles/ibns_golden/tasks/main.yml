@@ -1,0 +1,62 @@
+# roles/ibns_golden/tasks/main.yml
+# Stage 2 change, pushed through Catalyst Center: add the golden config
+# ALONGSIDE the converted config, then re-point each planned access port
+# (template attached first, converted interface lines stripped after), so the
+# port is never without authentication. Three pushes: global, templates, ports.
+# Inputs: ibns_state (from pre-check), ibns_run_id
+---
+- name: Find the RADIUS server group this switch uses for dot1x
+  ansible.builtin.set_fact:
+    ibns_radius_group: "{{ ibns_state.running | ibns_radius_group }}"
+
+- name: Require a RADIUS server group
+  ansible.builtin.assert:
+    that: ibns_radius_group | length > 0
+    fail_msg: "No 'aaa authentication dot1x default group' found; can't render the golden config."
+
+- name: Plan which ports get which golden template (description and config agree)
+  ansible.builtin.set_fact:
+    ibns_port_plan: "{{ ibns_state.port_plan }}"
+
+- name: Save the rollback data (converted interface config + plan; not in dry run, so a dry run never overwrites real rollback data)
+  when: not (dry_run | bool)
+  ansible.builtin.include_role:
+    name: ibns_snapshot
+    tasks_from: save
+  vars:
+    snapshot_name: "{{ item }}"
+    snapshot_content: "{{ {'run_id': ibns_run_id, 'port_plan': ibns_port_plan, 'auth_lines': ibns_state.auth_lines, 'port_classes': ibns_state.port_classes, 'sessions': ibns_state.sessions} | to_nice_json }}"
+  loop:
+    - "stage2-rollback-{{ ibns_run_id }}.json"
+    - "stage2-rollback-latest.json"
+
+- name: List held ports (not touched by this stage)
+  when: ibns_state.held_ports | length > 0
+  ansible.builtin.debug:
+    msg: "{{ ibns_state.held_ports }}"
+
+- name: Apply golden global config (policy-map, class-maps, service templates, AAA)
+  ansible.builtin.include_role:
+    name: ibns_push
+  vars:
+    ibns_push_step: golden-global
+    ibns_push_cli: "{{ lookup('ansible.builtin.template', ibns_template_dir ~ '/global.j2') }}"
+
+- name: Apply golden interface templates
+  ansible.builtin.include_role:
+    name: ibns_push
+  vars:
+    ibns_push_step: golden-templates
+    ibns_push_cli: "{{ lookup('ansible.builtin.template', ibns_template_dir ~ '/interface_templates.j2') }}"
+
+- name: Re-point access ports to their golden template (a failure here is caught by the post-check and rolled back)
+  ansible.builtin.include_role:
+    name: ibns_push
+  vars:
+    ibns_push_step: repoint
+    ibns_push_cli: "{{ ibns_port_plan | ibns_repoint_cli(ibns_state.auth_lines) }}"
+    ibns_push_may_fail: true
+
+- name: Keep the re-point push result for the report
+  ansible.builtin.set_fact:
+    ibns_repoint_error: "{{ ibns_push_error }}"

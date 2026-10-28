@@ -1,0 +1,60 @@
+# ansible/playbooks/ibns_stage3_cleanup.yml
+# RUN ORDER: 6 (separate change, after the soak period and a clean next-day check)
+# Stage 3: remove converted control-policy objects nothing references any more.
+# Every change is pushed through Catalyst Center (roles/ibns_push).
+#   pass -> write memory
+#   fail -> no write memory from us; restore removed objects from the backup
+#           taken first (the removed lines are in the pushed-stage3-cleanup snapshot)
+---
+- name: Resolve targets
+  ansible.builtin.import_playbook: ibns_target.yml
+  vars:
+    ibns_requires_change: true
+
+- name: Stage 3 - clean up unreferenced converted config
+  hosts: ibns_targets
+  gather_facts: false
+  serial: "{{ ibns_serial | default(5) }}"
+  vars:
+    ibns_run_id: "{{ hostvars['localhost']['ibns_run_id'] }}"
+    ibns_stage_tag: stage3
+    ibns_expected_mode: new-style
+    ibns_check_migration: false
+  tasks:
+    - name: Pre-check (switch is skipped if this fails)
+      ansible.builtin.include_role:
+        name: ibns_precheck
+
+    - name: Keep the state from before the change
+      ansible.builtin.set_fact:
+        ibns_pre: "{{ ibns_state }}"
+
+    - name: Back up the config
+      ansible.builtin.include_role:
+        name: ibns_backup
+
+    - name: Remove unreferenced objects
+      ansible.builtin.include_role:
+        name: ibns_cleanup
+
+    - name: Post-check (nothing should change for endpoints)
+      ansible.builtin.include_role:
+        name: ibns_postcheck
+      vars:
+        ibns_check_stage: golden
+
+    - name: Save config (post-check passed)
+      when:
+        - not (dry_run | bool)
+        - ibns_check_passed | bool
+      ansible.builtin.include_role:
+        name: ibns_save
+
+    - name: Report
+      ansible.builtin.include_role:
+        name: ibns_report
+      vars:
+        ibns_result:
+          stage: stage3-cleanup
+          outcome: "{{ 'dry-run' if dry_run | bool else ('cleaned' if ibns_check_passed | bool else 'CHECK-FAILED-NOT-SAVED') }}"
+          detail: "removed {{ ibns_orphans | length }} objects; {{ ibns_check.config_findings }}"

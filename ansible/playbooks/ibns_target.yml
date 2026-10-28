@@ -1,0 +1,37 @@
+# ansible/playbooks/ibns_target.yml
+# Imported FIRST by every IBNS playbook. Turns the survey hostname list into the
+# `ibns_targets` group with the same guardrails as the SWIM repo, and sets one
+# run id shared by every switch in the job.
+---
+- name: Resolve and validate target switches
+  hosts: localhost
+  gather_facts: false
+  connection: local
+  tasks:
+    - name: Parse survey hostnames into device_list
+      ansible.builtin.include_role:
+        name: odyssey_parse_devices
+
+    - name: Validate survey input (copied role)
+      ansible.builtin.include_role:
+        name: input_validation
+
+    - name: Validate IBNS survey input
+      ansible.builtin.include_role:
+        name: ibns_input_validation
+
+    - name: Match hostnames to inventory (exactly one match each)
+      ansible.builtin.include_role:
+        name: inventory_lookup
+
+    - name: Refuse targets spread over more than one site
+      when: ibns_single_site | bool
+      vars:
+        ibns_sites: "{{ groups['ibns_targets'] | map('extract', hostvars, 'dnac_site_path') | select('defined') | unique | list }}"
+      ansible.builtin.assert:
+        that: ibns_sites | length <= 1
+        fail_msg: "Targets span {{ ibns_sites | length }} sites: {{ ibns_sites }}. One site per job."
+
+    - name: Set one run id for every switch in this job
+      ansible.builtin.set_fact:
+        ibns_run_id: "{{ now(utc=true, fmt='%Y%m%dT%H%M%SZ') }}"

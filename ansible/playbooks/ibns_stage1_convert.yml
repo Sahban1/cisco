@@ -1,0 +1,72 @@
+# ansible/playbooks/ibns_stage1_convert.yml
+# RUN ORDER: 3 (change window)
+# Stage 1: convert legacy dot1x config to new-style IN PLACE. ONE-WAY.
+# Every change is pushed through Catalyst Center (roles/ibns_push).
+#   pass -> write memory
+#   fail -> no write memory from us, switch flagged FIX-FORWARD-REQUIRED
+#           (runbook: fix in new-style syntax; console/OOB restore is the last
+#           resort). VERIFY in the lab whether a Catalyst Center deployment
+#           saves the config by itself; if it does, a reload won't undo anything.
+---
+- name: Resolve targets
+  ansible.builtin.import_playbook: ibns_target.yml
+  vars:
+    ibns_requires_change: true
+
+- name: Stage 1 - convert to new-style
+  hosts: ibns_targets
+  gather_facts: false
+  serial: "{{ ibns_serial | default(5) }}"
+  vars:
+    ibns_run_id: "{{ hostvars['localhost']['ibns_run_id'] }}"
+    ibns_stage_tag: stage1
+    ibns_expected_mode: legacy
+  tasks:
+    - name: Pre-check (switch is skipped if this fails)
+      ansible.builtin.include_role:
+        name: ibns_precheck
+
+    - name: Keep the state from before the change
+      ansible.builtin.set_fact:
+        ibns_pre: "{{ ibns_state }}"
+
+    - name: Back up the config
+      ansible.builtin.include_role:
+        name: ibns_backup
+
+    - name: Convert
+      ansible.builtin.include_role:
+        name: ibns_convert
+
+    - name: Post-check (config checks + per-endpoint sessions)
+      ansible.builtin.include_role:
+        name: ibns_postcheck
+      vars:
+        ibns_check_stage: converted
+
+    - name: Save config (post-check passed)
+      when:
+        - not (dry_run | bool)
+        - ibns_check_passed | bool
+      ansible.builtin.include_role:
+        name: ibns_save
+
+    - name: Report
+      ansible.builtin.include_role:
+        name: ibns_report
+      vars:
+        ibns_result:
+          stage: stage1-convert
+          outcome: "{{ 'dry-run' if dry_run | bool else ('converted' if ibns_check_passed | bool else 'FIX-FORWARD-REQUIRED') }}"
+          detail: "{{ ibns_check.config_findings + (ibns_check.sessions.failures | map(attribute='detail') | list) }}"
+
+    - name: Flag a failed conversion
+      when:
+        - not (dry_run | bool)
+        - not (ibns_check_passed | bool)
+      ansible.builtin.fail:
+        msg: >-
+          Post-check failed after conversion. We did not write memory
+          (check whether Catalyst Center saved it).
+          Fix forward in new-style syntax (see docs/runbook.md); console/OOB
+          restore is the last resort. Do not reload this switch.

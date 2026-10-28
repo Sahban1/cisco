@@ -1,0 +1,56 @@
+# roles/ibns_collect/tasks/main.yml
+# Read-only, through Catalyst Center (no SSH to the switch).
+# Finds the switch in Catalyst Center (fact `ibns_device`), runs the show
+# commands through Command Runner, and parses them into the fact `ibns_state`
+# (running config, config mode, AAA servers, sessions, flash free, port
+# classes, port inventory from descriptions + config, migration plan,
+# interface auth lines).
+---
+- name: Find the switch in Catalyst Center
+  catc_device:
+    catc: "{{ catc }}"
+    hostname: "{{ inventory_hostname }}"
+  register: ibns_catc_device
+
+- name: Keep the Catalyst Center device record
+  ansible.builtin.set_fact:
+    ibns_device: "{{ ibns_catc_device.device }}"
+
+- name: Run show commands through Command Runner
+  catc_cli_read:
+    catc: "{{ catc }}"
+    device_id: "{{ ibns_device.id }}"
+    commands:
+      - show running-config
+      - show aaa servers
+      - show access-session method dot1x details
+      - show access-session method mab details
+      - "{{ ibns_flash_command }}"
+  register: ibns_raw
+
+- name: Parse collected output
+  ansible.builtin.set_fact:
+    ibns_state:
+      collected_at: "{{ now(utc=true, fmt='%Y-%m-%dT%H:%M:%SZ') }}"
+      running: "{{ ibns_raw.output[0] }}"
+      config_mode: "{{ ibns_raw.output[0] | ibns_config_mode_from_running }}"
+      aaa_servers: "{{ ibns_raw.output[1] | ibns_aaa_servers }}"
+      sessions: "{{ [ibns_raw.output[2], ibns_raw.output[3]] | ibns_parse_session_details }}"
+      flash_free: "{{ ibns_raw.output[4] | ibns_flash_free }}"
+      port_classes: "{{ ibns_raw.output[0] | ibns_classify_ports }}"
+      port_inventory: "{{ ibns_raw.output[0] | ibns_port_inventory(ibns_description_rules, ibns_port_roles, ibns_port_templates, ibns_hold_unmatched) }}"
+      auth_lines: "{{ ibns_raw.output[0] | ibns_interface_auth_lines }}"
+
+- name: Work out which ports migrate and which are held
+  ansible.builtin.set_fact:
+    ibns_state: "{{ ibns_state | combine({'port_plan': ibns_state.port_inventory | ibns_port_plan, 'held_ports': ibns_state.port_inventory | ibns_held_ports}) }}"
+
+- name: Summarise collected state
+  ansible.builtin.debug:
+    msg: >-
+      {{ inventory_hostname }}: mode={{ ibns_state.config_mode }},
+      sessions={{ ibns_state.sessions | length }},
+      AAA UP={{ ibns_state.aaa_servers | selectattr('state', 'equalto', 'UP') | list | length }}/{{ ibns_state.aaa_servers | length }},
+      ports={{ ibns_state.port_classes | length }},
+      migrate={{ ibns_state.port_plan | length }},
+      held={{ ibns_state.held_ports | length }}

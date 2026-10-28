@@ -1,0 +1,49 @@
+# roles/ibns_push/tasks/main.yml
+# The ONLY place IBNS changes a switch. Pushes CLI through Catalyst Center:
+# one template per switch (IBNS2_<hostname> in the IBNS2 project). Each push
+# replaces its content, commits a new version (comment = run id, stage, step),
+# deploys it and checks the result. The template's version history in
+# Catalyst Center is the record of every IBNS change on that switch.
+# Inputs:
+#   ibns_push_step      short name of the step (backup, convert, golden-global, ...)
+#   ibns_push_cli       rendered CLI (exec blocks built with the ibns_cli_exec filter)
+#   ibns_push_may_fail  true = record a failed deployment instead of failing the
+#                       switch, so the post-check and rollback can deal with it
+# Output: ibns_push_error ('' when the push worked)
+# Dry run: shows the CLI, changes nothing.
+---
+- name: "Dry run - CLI that would be pushed: {{ ibns_push_step }}"
+  when: dry_run | bool
+  ansible.builtin.debug:
+    msg: "{{ ibns_push_cli.splitlines() }}"
+
+- name: "Push through Catalyst Center: {{ ibns_push_step }}"
+  when: not (dry_run | bool)
+  catc_cli_push:
+    catc: "{{ catc }}"
+    device_id: "{{ ibns_device.id }}"
+    project: "{{ catc_template_project }}"
+    template_name: "{{ catc_template_prefix }}{{ inventory_hostname }}"
+    content: "{{ ibns_push_cli }}"
+    comment: "{{ ibns_run_id }} {{ ibns_stage_tag | default('') }} {{ ibns_push_step }}"
+    language: "{{ catc_template_language }}"
+    timeout: "{{ catc_deploy_timeout }}"
+  register: ibns_push_result
+  failed_when: >-
+    ibns_push_result.deployment_status | default('') != 'SUCCESS'
+    and not (ibns_push_may_fail | default(false) | bool)
+
+- name: Record the push result ('' = deployed successfully, or dry run)
+  ansible.builtin.set_fact:
+    ibns_push_error: >-
+      {{ '' if (dry_run | bool or ibns_push_result.deployment_status | default('') == 'SUCCESS')
+         else ibns_push_result.msg | default('push failed') }}
+
+- name: Keep the pushed CLI with the run's snapshots
+  when: not (dry_run | bool)
+  ansible.builtin.include_role:
+    name: ibns_snapshot
+    tasks_from: save
+  vars:
+    snapshot_name: "pushed-{{ ibns_stage_tag | default('manual') }}-{{ ibns_push_step }}-{{ ibns_run_id }}.txt"
+    snapshot_content: "{{ ibns_push_cli ~ '\n\n! result: ' ~ (ibns_push_error or 'SUCCESS') }}"

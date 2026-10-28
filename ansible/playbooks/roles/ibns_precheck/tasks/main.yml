@@ -1,0 +1,81 @@
+# roles/ibns_precheck/tasks/main.yml
+# Read-only gate before any stage. Collects state through Catalyst Center
+# (ibns_collect) and checks it.
+# Inputs: ibns_expected_mode = legacy | new-style | any
+#         ibns_check_migration = true (default) | false for stage 3, where ports
+#         are already on golden templates and nothing is left to migrate
+# On failure the switch is reported as "skipped" and removed from the run;
+# other switches in the job carry on.
+---
+- name: Collect switch state
+  ansible.builtin.include_role:
+    name: ibns_collect
+
+- name: Start with no failures
+  ansible.builtin.set_fact:
+    ibns_precheck_failures: []
+    ibns_aaa_up: "{{ ibns_state.aaa_servers | selectattr('state', 'equalto', 'UP') | list | length }}"
+
+- name: Check Catalyst Center can manage the switch
+  when: ibns_device.reachabilityStatus != 'Reachable' or ibns_device.collectionStatus not in ibns_catc_ok_collection
+  ansible.builtin.set_fact:
+    ibns_precheck_failures: "{{ ibns_precheck_failures + ['Catalyst Center shows ' ~ ibns_device.reachabilityStatus ~ ' / ' ~ ibns_device.collectionStatus] }}"
+
+- name: Check IOS-XE version
+  when: ibns_device.softwareVersion is version(ibns_min_iosxe, '<')
+  ansible.builtin.set_fact:
+    ibns_precheck_failures: "{{ ibns_precheck_failures + ['IOS-XE ' ~ ibns_device.softwareVersion ~ ' is below ' ~ ibns_min_iosxe] }}"
+
+- name: Check RADIUS servers to ClearPass are UP
+  when: ibns_aaa_up | int < ibns_min_aaa_up | int
+  ansible.builtin.set_fact:
+    ibns_precheck_failures: "{{ ibns_precheck_failures + ['only ' ~ ibns_aaa_up ~ ' RADIUS server(s) UP, need ' ~ ibns_min_aaa_up] }}"
+
+- name: Check authentication config mode
+  when: ibns_expected_mode != 'any' and ibns_state.config_mode != ibns_expected_mode
+  ansible.builtin.set_fact:
+    ibns_precheck_failures: "{{ ibns_precheck_failures + ['config mode is ' ~ ibns_state.config_mode ~ ', expected ' ~ ibns_expected_mode] }}"
+
+- name: Check free flash for the config backup
+  when: ibns_state.flash_free | int < ibns_min_flash_bytes | int
+  ansible.builtin.set_fact:
+    ibns_precheck_failures: "{{ ibns_precheck_failures + ['only ' ~ ibns_state.flash_free ~ ' bytes free on flash'] }}"
+
+- name: Check there are access ports to migrate
+  when:
+    - ibns_check_migration | default(true) | bool
+    - ibns_state.port_plan | length == 0
+  ansible.builtin.set_fact:
+    ibns_precheck_failures: "{{ ibns_precheck_failures + ['no access ports to migrate (no auth ports whose description and config agree)'] }}"
+
+- name: Check held ports (description and config disagree, or no rule matched)
+  when:
+    - ibns_check_migration | default(true) | bool
+    - ibns_state.held_ports | length > ibns_max_held_ports | int
+  ansible.builtin.set_fact:
+    ibns_precheck_failures: "{{ ibns_precheck_failures + [(ibns_state.held_ports | length) ~ ' held port(s), allowed ' ~ ibns_max_held_ports ~ ': ' ~ (ibns_state.held_ports | join(' | '))] }}"
+
+- name: List held ports (left on the converted config, not templated)
+  when: ibns_state.held_ports | length > 0
+  ansible.builtin.debug:
+    msg: "{{ ibns_state.held_ports }}"
+
+- name: Report and skip this switch if any check failed
+  when: ibns_precheck_failures | length > 0
+  block:
+    - name: Report skipped switch
+      ansible.builtin.include_role:
+        name: ibns_report
+      vars:
+        ibns_result:
+          stage: "{{ ibns_stage_tag | default('precheck') }}"
+          outcome: skipped
+          detail: "{{ ibns_precheck_failures | join('; ') }}"
+
+    - name: Stop here for this switch
+      ansible.builtin.fail:
+        msg: "Pre-check failed: {{ ibns_precheck_failures | join('; ') }}"
+
+- name: Pre-check passed
+  ansible.builtin.debug:
+    msg: "{{ inventory_hostname }}: pre-check passed ({{ ibns_state.sessions | length }} sessions recorded)."

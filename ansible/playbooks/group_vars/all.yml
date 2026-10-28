@@ -1,0 +1,121 @@
+# ansible/playbooks/group_vars/all.yml   (playbook-side: loads for every inventory, laptop and AAP)
+# REPLACES ud00's all.yml (which held CML lab settings and SWIM golden images).
+# Values marked DECIDE need a team decision; values marked CONFIRM need checking.
+---
+# ---- Catalyst Center (every read and every change goes through it) -----------
+# No SSH to switches. Reads: Command Runner. Changes: Template Programmer.
+# AAP: the DNAC service-ID credential injects DEVOPS_USERNAME / DEVOPS_PASSWORD.
+# Laptop: export DEVOPS_USERNAME, DEVOPS_PASSWORD (Catalyst Center login) and
+#         CATC_HOST; CATC_CA_BUNDLE if the RBC CA isn't in the system store.
+# CONFIRM: dnac_host from the dnac inventory plugin is the Catalyst Center
+#          address that manages the switch (else set CATC_HOST).
+catc_host: "{{ dnac_host | default(lookup('ansible.builtin.env', 'CATC_HOST'), true) }}"
+catc:
+  host: "{{ catc_host }}"
+  username: "{{ lookup('ansible.builtin.env', 'DEVOPS_USERNAME') }}"
+  password: "{{ lookup('ansible.builtin.env', 'DEVOPS_PASSWORD') }}"
+  validate_certs: true
+  ca_path: "{{ lookup('ansible.builtin.env', 'CATC_CA_BUNDLE') }}"
+catc_template_project: IBNS2            # Template Programmer project (created if missing)
+catc_template_prefix: IBNS2_            # one template per switch: IBNS2_<hostname>
+catc_template_language: JINJA           # CONFIRM #MODE_ENABLE / #INTERACTIVE work in JINJA on our version
+catc_deploy_timeout: 900                # seconds to wait for a deployment
+ibns_catc_ok_collection: [Managed]      # collection status the pre-check accepts
+
+# ---- safety defaults ---------------------------------------------------------
+dry_run: true                       # nothing changes unless the survey sets false
+ibns_single_site: true              # one site per job
+ibns_max_devices_per_job: 20        # DECIDE
+ibns_serial: 5                      # switches changed at the same time within a job
+ibns_change_regex: "^CHG[0-9]{7}$"  # CONFIRM ServiceNow change number format
+
+# ---- pre-check thresholds ----------------------------------------------------
+ibns_min_iosxe: "17.12.05"          # DECIDE minimum IOS-XE for IBNS 2.0
+ibns_min_aaa_up: 1                  # RADIUS servers to ClearPass that must be UP
+ibns_min_flash_bytes: 10485760      # 10 MB free for the config backup
+ibns_flash_command: "dir flash:"    # CONFIRM Command Runner accepts 'dir' (else "show flash:")
+ibns_flash_backup: true             # also copy the running config to flash before each change
+ibns_convert_prompt: "continue"     # CONFIRM: text in the convert-to new-style confirmation prompt
+
+# ---- post-check --------------------------------------------------------------
+ibns_reauth_wait: 120               # seconds to wait before comparing sessions (lab-tune)
+ibns_max_failed_endpoints: 0        # endpoints allowed to fail before rollback
+
+# ---- golden config -------------------------------------------------------------
+ibns_template_dir: "{{ playbook_dir }}/../templates/ibns2"
+ibns_mode: closed                   # DECIDE: closed | low-impact
+ibns_policy_name: PMAP_IBNS2_GOLDEN
+ibns_preauth_acl: IBNS2_PREAUTH     # used only in low-impact mode; ACL must already exist
+ibns_critical_data_vlan: ""         # empty = critical auth keeps the port's access VLAN
+ibns_dot1x_tx_period: 10            # DECIDE (lab-tune MAB fallback timing)
+ibns_dot1x_max_reauth_req: 2        # DECIDE
+ibns_restart_seconds: 60
+
+# Port class (from the config) -> golden interface template.
+# Classes not listed here are never touched. The description must also agree
+# (see port roles below) or the port is held.
+ibns_port_templates:
+  multi-domain: IBNS2_MDA
+  dot1x+mab: IBNS2_DOT1X_MAB
+  dot1x-only: IBNS2_DOT1X_MAB
+  mab-only: IBNS2_MAB
+
+# ---- port roles from interface descriptions ----------------------------------
+# A port is migrated only when its DESCRIPTION (role) and its CONFIG (class)
+# agree. Everything here is a starting guess: CONFIRM against real descriptions.
+# Build the rules from data, not memory:
+#   python python/ibns_tools/classify_ports.py --run reports/raw/<date>
+#   then read classify/unmatched_descriptions.csv and classify/held_ports.csv
+#
+# Rules: first match wins. 'match' is a Python regex, case-insensitive,
+# searched anywhere in the description. Keep single quotes (no escaping needed).
+# Put narrow rules (uplinks, APs) above broad ones (users).
+ibns_description_rules:
+  - { match: '\b(uplink|upl|dist|core|mdf|idf)\b|^to[-_ ]|\bpo\d+\b', role: uplink }
+  - { match: '\b(ap|wap|wifi|wlan|aironet)\b', role: ap }
+  - { match: '\b(srv|server|esx|ups|pdu)\b', role: server }
+  - { match: '\b(prn|prt|printer|mfp|mfd|plotter)\b', role: printer }
+  - { match: '\b(cam|cams|camera|cctv|nvr)\b', role: camera }
+  - { match: '\b(atm|kiosk|badge|door|hvac|bms|iot|tv|display)\b', role: facilities }
+  - { match: '\b(ph|phone|voip|ipt|ip[-_ ]?phone)\b', role: phone }
+  - { match: '\b(pc|desk|wkst|workstation|user|data|teller)\b', role: user }
+  - { match: '\b(unused|spare|available|not[-_ ]in[-_ ]use|reserved)\b', role: unused }
+
+# Role -> may it be migrated, and which config classes are consistent with it.
+# A port whose config class is not in 'expect' is a mismatch and is HELD.
+ibns_port_roles:
+  user:       { migrate: true,  expect: [multi-domain, dot1x+mab, dot1x-only] }
+  phone:      { migrate: true,  expect: [multi-domain] }
+  printer:    { migrate: true,  expect: [mab-only, dot1x+mab, multi-domain] }
+  camera:     { migrate: true,  expect: [mab-only, dot1x+mab] }
+  facilities: { migrate: true,  expect: [mab-only, dot1x+mab, multi-domain] }
+  unused:     { migrate: true,  expect: [multi-domain, dot1x+mab, dot1x-only, mab-only, shutdown-static] }
+  ap:         { migrate: false, expect: [trunk, static-access] }
+  uplink:     { migrate: false, expect: [trunk, port-channel-member, routed, uplink-module] }
+  server:     { migrate: false, expect: [static-access, trunk, shutdown-static] }
+
+ibns_hold_unmatched: true      # true = auth ports with no matching rule are held, not migrated
+ibns_max_held_ports: 0         # DECIDE: pre-check fails the switch above this many held ports
+
+# Golden object names. Cleanup never removes these, even when unreferenced.
+ibns_golden_names:
+  - PMAP_IBNS2_GOLDEN
+  - IBNS2_MDA
+  - IBNS2_DOT1X_MAB
+  - IBNS2_MAB
+  - IBNS2_CRITICAL_DATA
+  - IBNS2_CRITICAL_VOICE
+  - IBNS2_DOT1X_FAILED
+  - IBNS2_DOT1X_NO_RESP
+  - IBNS2_MAB_FAILED
+  - IBNS2_AAA_DOWN_UNAUTHD
+  - IBNS2_AAA_DOWN_AUTHD
+  - IBNS2_IN_CRITICAL
+  - IBNS2_NOT_IN_CRITICAL
+
+# ---- snapshot store ------------------------------------------------------------
+# local       = laptop runs (folder below)
+# artifactory = AAP runs (jobs on different days must share snapshots)
+ibns_snapshot_backend: local
+ibns_snapshot_dir: "{{ lookup('ansible.builtin.env', 'IBNS_SNAPSHOT_DIR') | default(playbook_dir ~ '/../../reports/raw/snapshots', true) }}"
+ibns_artifactory_url: "https://<ARTIFACTORY_HOST>/artifactory/<GENERIC_REPO>/ibns2"   # CONFIRM

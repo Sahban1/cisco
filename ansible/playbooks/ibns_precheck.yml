@@ -1,0 +1,28 @@
+# ansible/playbooks/ibns_precheck.yml
+# RUN ORDER: 2 (day of the change, before the window; safe to run any time)
+# Read-only. Same checks every stage runs first, as a standalone go/no-go.
+# Run the discovery drift `compare` from your laptop before this.
+---
+- name: Resolve targets
+  ansible.builtin.import_playbook: ibns_target.yml
+
+- name: Pre-check (read-only)
+  hosts: ibns_targets
+  gather_facts: false
+  vars:
+    ibns_run_id: "{{ hostvars['localhost']['ibns_run_id'] }}"
+    ibns_stage_tag: precheck
+    ibns_expected_mode: any
+  tasks:
+    - name: Run pre-check
+      ansible.builtin.include_role:
+        name: ibns_precheck
+
+    - name: Report
+      ansible.builtin.include_role:
+        name: ibns_report
+      vars:
+        ibns_result:
+          stage: precheck
+          outcome: passed
+          detail: "mode={{ ibns_state.config_mode }}, sessions={{ ibns_state.sessions | length }}"

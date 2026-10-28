@@ -1,0 +1,48 @@
+# roles/ibns_postcheck/tasks/main.yml
+# Layer 1 (config checks) + layer 2 (per-endpoint session comparison).
+# Inputs:
+#   ibns_pre          state captured before the change (sessions, port_classes, port_plan)
+#   ibns_check_stage  converted | golden
+# Output: ibns_check (details) and ibns_check_passed (bool). Does not fail the
+# host itself; the stage playbook decides what to do with the result.
+---
+- name: Wait for endpoints to re-authenticate
+  when: not (dry_run | bool)
+  ansible.builtin.pause:
+    seconds: "{{ ibns_reauth_wait }}"
+
+- name: Collect state after the change
+  ansible.builtin.include_role:
+    name: ibns_collect
+
+- name: Compare with the state before the change
+  ansible.builtin.set_fact:
+    ibns_check:
+      config_findings: "{{ ibns_state.running | ibns_config_checks(ibns_pre.port_classes, ibns_port_templates, ibns_check_stage, ibns_pre.port_plan) }}"
+      aaa_up: "{{ ibns_state.aaa_servers | selectattr('state', 'equalto', 'UP') | list | length }}"
+      sessions: "{{ ibns_pre.sessions | ibns_compare_sessions(ibns_state.sessions, ibns_max_failed_endpoints) }}"
+
+- name: Decide pass or fail
+  ansible.builtin.set_fact:
+    ibns_check_passed: >-
+      {{ (ibns_check.config_findings | length == 0)
+         and (ibns_check.aaa_up | int >= ibns_min_aaa_up | int)
+         and (ibns_check.sessions.passed | bool) }}
+
+- name: Show post-check result
+  ansible.builtin.debug:
+    msg:
+      - "Passed:            {{ ibns_check_passed }}"
+      - "Config findings:   {{ ibns_check.config_findings }}"
+      - "RADIUS servers UP: {{ ibns_check.aaa_up }}"
+      - "Endpoints checked: {{ ibns_check.sessions.checked }}, failed: {{ ibns_check.sessions.failed_endpoints }}"
+      - "Failures:          {{ ibns_check.sessions.failures }}"
+      - "New endpoints:     {{ ibns_check.sessions.new_endpoints | length }}"
+
+- name: Save post-check snapshot
+  ansible.builtin.include_role:
+    name: ibns_snapshot
+    tasks_from: save
+  vars:
+    snapshot_name: "postcheck-{{ ibns_check_stage }}-{{ ibns_run_id }}.json"
+    snapshot_content: "{{ {'state': {'sessions': ibns_state.sessions, 'port_classes': ibns_state.port_classes, 'port_plan': ibns_state.port_plan, 'config_mode': ibns_state.config_mode}, 'check': ibns_check, 'passed': ibns_check_passed} | to_nice_json }}"

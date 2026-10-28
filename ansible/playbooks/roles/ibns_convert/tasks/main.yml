@@ -1,0 +1,11 @@
+# roles/ibns_convert/tasks/main.yml
+# Stage 1 change, pushed through Catalyst Center. ONE-WAY: there is no command
+# to go back to legacy. The command asks for confirmation; ibns_convert_prompt
+# must match the prompt text (VERIFY on the lab switch).
+---
+- name: Convert legacy auth config to new-style (one-way)
+  ansible.builtin.include_role:
+    name: ibns_push
+  vars:
+    ibns_push_step: convert
+    ibns_push_cli: "{{ [{'command': 'authentication convert-to new-style', 'prompt': ibns_convert_prompt, 'answer': 'yes'}] | ibns_cli_exec }}"

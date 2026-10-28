@@ -1,0 +1,8 @@
+# requirements.yml
+# NEW. Ansible collections for laptop runs:
+#   ansible-galaxy collection install -r requirements.yml -p ./collections
+# IBNS needs NO collections: it talks to Catalyst Center through its own modules
+# (ansible/plugins/modules/catc_*.py), which use ansible-core only. That means
+# the existing 2.16 execution environment works as it is.
+---
+collections: []

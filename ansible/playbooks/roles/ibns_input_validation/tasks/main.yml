@@ -1,0 +1,25 @@
+# roles/ibns_input_validation/tasks/main.yml
+# IBNS-specific survey checks. Runs on localhost after the copied
+# odyssey_parse_devices + input_validation roles, before inventory_lookup.
+---
+- name: Validate dry_run is a boolean
+  ansible.builtin.assert:
+    that:
+      - dry_run | string | lower in ['true', 'false']
+    fail_msg: "dry_run must be true or false, got '{{ dry_run }}'."
+
+- name: Validate the ServiceNow change number for config-changing stages
+  when: ibns_requires_change | default(false) | bool and not (dry_run | bool)
+  ansible.builtin.assert:
+    that:
+      - change_number is defined
+      - change_number is match(ibns_change_regex)
+    fail_msg: "A valid change number (pattern {{ ibns_change_regex }}) is required when dry_run is false."
+
+- name: Limit how many switches one job may touch
+  ansible.builtin.assert:
+    that:
+      - device_list | length <= ibns_max_devices_per_job | int
+    fail_msg: >-
+      {{ device_list | length }} switches requested; the limit per job is
+      {{ ibns_max_devices_per_job }}. Split the site into smaller jobs.
